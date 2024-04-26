@@ -1,0 +1,128 @@
+#!/bin/sh
+
+# Template for shell scripts
+# 
+# Shell scripts that also can be used as modules/libraries for other scripts.
+# When used as libraries this is how its done:
+# - First: set the the MODULINO=1
+#
+# 
+#
+# Usage: [Options] <Command> [args]
+#
+# Options:
+#   --help      show help
+#
+# Commands:
+#   hello        say hello 
+#   one         say one 
+#   two         say two
+
+set -u
+
+
+template__init(){
+    _bkblib__source 'libstd.sh'
+}
+
+template__main(){
+    [ -n "${1:-}" ] || usage
+
+    local foopath
+    if foopath="$(_bkblib__getpath "bar.pl" 'foo' '2024041913')" ; then
+        perl "$foopath"
+    else
+        die "Err: could not load foo/perl"
+    fi
+
+    libstd__hello
+
+    local cmd
+    while [ $# -gt 0 ] ; do
+        case "$1" in
+            -h|--help) help 1>&2 ; exit 1 ;;
+            -*) die "Err: invalid option '$1'";;
+            say|greet) cmd="$1"; shift; break ;;
+            *) die "Err: could not find cmd for '$1' run --help" ;;
+        esac
+        shift
+    done 
+
+    if [ -n "${1:-}" ] ; then
+        local object="${1:-}"
+
+        case "$object" in
+            hello) libstd__hello "$@";;
+            one) echo one  "$@";;
+            two) echo two  "$@";;
+            *) die "Err: invalid command '$cmd'" ;; 
+        esac
+    fi
+}
+
+
+######## Prelude
+
+prn(){ printf "%s" "$@"; }
+info(){ echo "$@" >&2;  }
+die(){ echo "$@" >&2; exit 1; }
+fail(){ printf "Fail %s\n" "$@" 1>&2; }
+help(){ perl -ne 'print "$1\n" if /^\s*#\s+(.*)/; exit if /^\s*[^#\s]+/;' "$0"; }
+usage(){ help | grep Usage 1>&2 ; die "or: --help" ; }
+this_second() { date +'%Y%m%d%H%M%S' ; }
+
+
+######## Bkblib
+
+_bkblib__getpath(){
+    local lib="${1:-}"; local pkg="${2:-}"; local version="${3:-}"
+    local lib_str
+    case $# in 3) lib_str="$pkg/${lib%.*}/${lib%.*}_${version}.${lib##*.}" ;; 2) lib_str="$pkg/${lib}";; 1) lib_str="${lib}";; esac
+    if [ -z "$lib_str" ]; then
+        fail  "(libpath): could not set lib_str, wrong number of args"
+        return 1
+    fi
+    local lib_path
+    for dir in "${MAINDIR:-}" ${BKBLIB_LIBRARY_PATH:-} "$HOME/.local/bkblib"; do
+        if [ -f "$dir/$lib_str" ]; then lib_path="$dir/$lib_str";   BKBLIB_LOADED_LIBS="${lib},${lib_str} ${BKBLIB_LOADED_LIBS:-}"; break ; fi
+    done
+    if [ -f "${lib_path:-}" ]; then
+        prn "${lib_path}"
+    else
+        fail "(libpath): could not find lib for '$lib' for '$lib_str'  under lib_path '${lib_path:-}'" 
+        return 1
+    fi
+}
+
+_bkblib__source(){ # for foolib.sh modulino.dash 
+    local lib="${1:-}";
+    case "${lib:-}" in lib*.sh|*.dash) : ;; *) fail "loadlib: not a valid lib '${lib:-}'"; return 1 ;; esac
+    local lib_str
+    for l in ${BKBLIB_LOADED_LIBS:-}; do 
+        if [ "${l%,*}" = "$lib" ]; then
+            if [ "${l##*,}" = "$lib_str" ]; then  return 0; else fail "(_bkblib__source): lib '$lib' loaded,  '$lib_str' not loaded"; return 1; fi
+        fi
+    done
+    local lib_path; lib_path="$(_bkblib__getpath "$@")" || { fail "(_bkblib__source): library not loaded '$lib'" ; return 1; }
+    . "$lib_path" || { fail "loadlib: could not source '$lib_path'" ; return 1; }
+}
+
+######## Modulino 
+
+if [ -z "${MAINDIR:-}" ] ; then
+    MAINDIR="$(cd $(dirname "$0" 2>/dev/null) && pwd -P)" || die "Err: could not set MAINDIR"
+    [ -d "$MAINDIR" ] || die "Err: no valid MAINDIR with '$MAINDIR'"
+######## Script
+    template__init || die "Err: (template__init): could not init, imports failed, or not a modulino"
+    template__main "$@"  
+######## 
+else
+    template__init || { 
+        fail "(template__init): could not init, imports failed or not a modulino"
+        return 1
+    }
+fi
+
+
+
+
